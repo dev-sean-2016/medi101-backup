@@ -1,177 +1,140 @@
 @echo off
-chcp 65001 >nul
 REM ====================================================================
-REM Medi101 백업 프로그램 원클릭 설치 스크립트
+REM Medi101 Backup Program - One-Click Setup
 REM 
-REM 이 스크립트는 다음을 자동으로 수행합니다:
-REM 1. Git 설치 확인 및 설치 안내
-REM 2. 백업 프로그램 저장소 클론
-REM 3. 설정 파일 생성 안내
-REM 4. 작업 스케줄러 등록
+REM This script automatically:
+REM 1. Checks and installs Git
+REM 2. Clones backup program repository
+REM 3. Creates config file
+REM 4. Registers Windows Task Scheduler
 REM 
-REM 사용 방법:
-REM   1. 이 파일을 원하는 위치에 다운로드
-REM   2. 마우스 오른쪽 클릭 → "관리자 권한으로 실행"
+REM Usage:
+REM   Right-click -> "Run as administrator"
 REM ====================================================================
 
 echo.
 echo ========================================
-echo Medi101 백업 프로그램 설치
+echo Medi101 Backup Setup
 echo ========================================
 echo.
 
-REM 관리자 권한 확인
+REM Check administrator privileges
 net session >nul 2>&1
 if %errorlevel% neq 0 (
-    echo [오류] 이 스크립트는 관리자 권한이 필요합니다.
-    echo.
-    echo 마우스 오른쪽 버튼 클릭 후 
-    echo "관리자 권한으로 실행"을 선택해주세요.
+    echo [ERROR] Administrator privileges required
+    echo Please right-click and select "Run as administrator"
     echo.
     pause
     exit /b 1
 )
 
-echo [1/5] 관리자 권한 확인 완료
+echo [1/5] Administrator check - OK
 echo.
 
 REM ====================================================================
-REM 단계 2: Git 설치 확인 및 자동 설치
+REM Step 2: Check and install Git
 REM ====================================================================
 echo ----------------------------------------
-echo [2/5] Git 설치 확인 및 자동 설치
+echo [2/5] Git installation check
 echo ----------------------------------------
 
 where git >nul 2>nul
 if %errorlevel% equ 0 (
-    echo [OK] Git이 이미 설치되어 있습니다.
+    echo [OK] Git is already installed
     git --version
     goto :git_ok
 )
 
-echo [알림] Git이 설치되어 있지 않습니다.
-echo Git을 자동으로 설치합니다...
+echo [INFO] Git not found. Installing automatically...
 echo.
 
-REM 방법 1: winget으로 설치 시도 (Windows 10/11)
-echo [시도 1] winget으로 Git 설치 중...
+REM Method 1: Try winget (Windows 10/11)
+echo [Trying] Installing Git via winget...
 winget install --id Git.Git -e --source winget --silent --accept-package-agreements --accept-source-agreements >nul 2>&1
 
 if %errorlevel% equ 0 (
-    echo [OK] winget으로 Git 설치 완료
-    
-    REM PATH 환경변수에 Git 추가
+    echo [OK] Git installed via winget
     set "PATH=%PATH%;C:\Program Files\Git\cmd"
-    
-    REM Git 설치 확인
     where git >nul 2>nul
     if %errorlevel% equ 0 (
-        echo [OK] Git이 정상적으로 설치되었습니다.
+        echo [OK] Git installation successful
         git --version
         goto :git_ok
     )
 )
 
-REM 방법 2: PowerShell로 Git 설치 파일 다운로드 후 설치
-echo [시도 2] PowerShell로 Git 설치 파일 다운로드 중...
-echo (약 50MB, 시간이 걸릴 수 있습니다...)
+REM Method 2: Download and install via PowerShell
+echo [Trying] Downloading Git installer...
+echo (About 50MB, may take 1-2 minutes...)
 
-REM 임시 폴더에 다운로드
 set TEMP_INSTALLER=%TEMP%\Git-Installer.exe
 
-REM Git 최신 버전 다운로드 (Git for Windows)
-powershell -NoProfile -ExecutionPolicy Bypass -Command "& { try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; $tag = (Invoke-RestMethod -Uri 'https://api.github.com/repos/git-for-windows/git/releases/latest').tag_name; $version = $tag -replace 'v',''; $url = \"https://github.com/git-for-windows/git/releases/download/$tag/Git-$version-64-bit.exe\"; Write-Host \"다운로드 URL: $url\"; Invoke-WebRequest -Uri $url -OutFile '%TEMP_INSTALLER%' -UseBasicParsing; exit 0 } catch { Write-Host \"다운로드 실패: $_\"; exit 1 } }"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "& { try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; $tag = (Invoke-RestMethod -Uri 'https://api.github.com/repos/git-for-windows/git/releases/latest').tag_name; $version = $tag -replace 'v',''; $url = \"https://github.com/git-for-windows/git/releases/download/$tag/Git-$version-64-bit.exe\"; Write-Host \"Downloading...\"; Invoke-WebRequest -Uri $url -OutFile '%TEMP_INSTALLER%' -UseBasicParsing; exit 0 } catch { Write-Host \"Failed: $_\"; exit 1 } }"
 
 if %errorlevel% neq 0 (
-    echo [오류] Git 설치 파일 다운로드 실패
+    echo [ERROR] Git download failed
     echo.
-    echo 수동 설치가 필요합니다:
-    echo   1. https://git-scm.com/download/win 방문
-    echo   2. Git 다운로드 및 설치
-    echo   3. 이 스크립트를 다시 실행
-    echo.
+    echo Manual installation required:
+    echo   https://git-scm.com/download/win
     pause
     exit /b 1
 )
 
-echo [OK] 다운로드 완료
-echo.
-echo Git 설치 중... (자동 설치, 기본 설정 사용)
-echo (약 1-2분 소요, 잠시만 기다려주세요...)
+echo [OK] Download complete
+echo Installing Git... (1-2 minutes, please wait...)
 
-REM 자동 설치 (/VERYSILENT: 조용히 설치, /NORESTART: 재시작 안 함)
-"%TEMP_INSTALLER%" /VERYSILENT /NORESTART /NOCANCEL /SP- /CLOSEAPPLICATIONS /RESTARTAPPLICATIONS /COMPONENTS="icons,ext\reg\shellhere,assoc,assoc_sh"
+"%TEMP_INSTALLER%" /VERYSILENT /NORESTART /NOCANCEL /SP-
 
-if %errorlevel% neq 0 (
-    echo [오류] Git 설치 실패
-    pause
-    exit /b 1
-)
-
-REM 설치 완료 대기 (설치 파일이 백그라운드에서 실행됨)
-echo 설치 완료 대기 중...
 timeout /t 5 /nobreak >nul
+if exist "%TEMP_INSTALLER%" del /f /q "%TEMP_INSTALLER%"
 
-REM 설치 파일 삭제
-if exist "%TEMP_INSTALLER%" (
-    del /f /q "%TEMP_INSTALLER%" >nul 2>&1
-)
-
-REM PATH 환경변수에 Git 추가
 set "PATH=%PATH%;C:\Program Files\Git\cmd"
 
-REM Git 설치 확인
 where git >nul 2>nul
-if %errorlevel% equ 0 (
-    echo [OK] Git이 정상적으로 설치되었습니다!
-    git --version
-    goto :git_ok
+if %errorlevel% neq 0 (
+    echo [ERROR] Git installed but not working
+    echo Please restart computer and run this script again
+    pause
+    exit /b 1
 )
-
-echo.
-echo [오류] Git 설치는 완료되었으나 실행할 수 없습니다.
-echo 컴퓨터를 재시작한 후 이 스크립트를 다시 실행해주세요.
-echo.
-pause
-exit /b 1
 
 :git_ok
 echo.
 
 REM ====================================================================
-REM 단계 3: 설치 경로 선택
+REM Step 3: Choose installation directory
 REM ====================================================================
 echo ----------------------------------------
-echo [3/5] 설치 경로 선택
+echo [3/5] Installation directory
 echo ----------------------------------------
 echo.
-echo 백업 프로그램을 설치할 경로를 선택해주세요.
-echo 기본 경로: C:\medi101-backup
+echo Choose installation directory
+echo Default: C:\medi101-backup
 echo.
-set /p INSTALL_PATH="설치 경로 (Enter = 기본 경로): "
+set /p INSTALL_PATH="Enter path (or press Enter for default): "
 
 if "%INSTALL_PATH%"=="" (
     set INSTALL_PATH=C:\medi101-backup
 )
 
 echo.
-echo 설치 경로: %INSTALL_PATH%
+echo Installation path: %INSTALL_PATH%
 echo.
 
-REM 디렉토리가 이미 존재하는지 확인
+REM Check if directory exists
 if exist "%INSTALL_PATH%" (
-    echo [경고] 이미 해당 경로에 폴더가 존재합니다.
+    echo [WARNING] Directory already exists
     echo.
     dir /b "%INSTALL_PATH%"
     echo.
-    echo 기존 폴더를 삭제하고 새로 설치하시겠습니까? (Y/N)
-    set /p DELETE_EXISTING="입력: "
+    echo Delete existing folder and reinstall? (Y/N)
+    set /p DELETE_EXISTING="Input: "
     
     if /i "%DELETE_EXISTING%"=="Y" (
-        echo 기존 폴더 삭제 중...
+        echo Deleting existing folder...
         rmdir /s /q "%INSTALL_PATH%"
     ) else (
-        echo 설치를 취소합니다.
+        echo Installation cancelled
         pause
         exit /b 0
     )
@@ -180,104 +143,94 @@ if exist "%INSTALL_PATH%" (
 echo.
 
 REM ====================================================================
-REM 단계 4: Git 저장소 클론
+REM Step 4: Clone repository
 REM ====================================================================
 echo ----------------------------------------
-echo [4/5] 백업 프로그램 다운로드
+echo [4/5] Downloading backup program
 echo ----------------------------------------
 echo.
-echo Git 저장소에서 최신 버전을 다운로드합니다...
-echo 저장소: https://github.com/dev-sean-2016/medi101-backup.git
+echo Cloning from GitHub...
+echo Repository: https://github.com/dev-sean-2016/medi101-backup.git
 echo.
 
 git clone https://github.com/dev-sean-2016/medi101-backup.git "%INSTALL_PATH%"
 
 if %errorlevel% neq 0 (
     echo.
-    echo [오류] Git 저장소 클론에 실패했습니다.
+    echo [ERROR] Git clone failed
     echo.
-    echo 가능한 원인:
-    echo   1. 인터넷 연결 문제
-    echo   2. Git 저장소 주소 오류
-    echo   3. Git 저장소 접근 권한 문제
-    echo.
-    echo 해결 방법:
-    echo   1. 인터넷 연결을 확인해주세요
-    echo   2. 저장소가 Public인지 확인해주세요
-    echo   3. 잠시 후 다시 시도해주세요
+    echo Possible causes:
+    echo   1. Internet connection problem
+    echo   2. Repository access denied
+    echo   3. Invalid repository URL
     echo.
     pause
     exit /b 1
 )
 
-echo [OK] 다운로드 완료
+echo [OK] Download complete
 echo.
 
-REM 설치 경로로 이동
 cd /d "%INSTALL_PATH%"
 
 REM ====================================================================
-REM 단계 5: 설정 파일 생성
+REM Step 5: Create config file
 REM ====================================================================
 echo ----------------------------------------
-echo [5/5] 설정 파일 생성
+echo [5/5] Config file setup
 echo ----------------------------------------
 echo.
 
-REM config.json이 이미 있는지 확인
 if exist "config.json" (
-    echo [OK] config.json 파일이 이미 존재합니다.
+    echo [OK] config.json already exists
     goto :config_ok
 )
 
-REM config.json.template에서 복사
 if exist "config.json.template" (
     copy config.json.template config.json >nul
-    echo [OK] config.json 파일 생성 완료
+    echo [OK] config.json created
     echo.
-    echo [중요] config.json 파일을 수정해야 합니다!
+    echo [IMPORTANT] You must edit config.json!
     echo.
-    echo 수정할 항목:
+    echo Required fields:
     echo   - access_key: Kakao Cloud Access Key
     echo   - secret_key: Kakao Cloud Secret Key
-    echo   - business_number: 사업자 번호
-    echo   - service_name: 서비스 명 (기본: YSR2000)
-    echo   - source_paths: 백업할 폴더 경로 (기본: C:\backup\WEEKLY)
-    echo   - schedule_time: 실행 시간 (기본: 07:00)
+    echo   - business_number: Your business number
+    echo   - service_name: Service name (default: YSR2000)
+    echo   - source_paths: Backup source path (default: C:\backup\WEEKLY)
+    echo   - schedule_time: Execution time (default: 07:00)
     echo.
-    echo 지금 config.json 파일을 여시겠습니까? (Y/N)
-    set /p OPEN_CONFIG="입력: "
+    echo Open config.json now? (Y/N)
+    set /p OPEN_CONFIG="Input: "
     
     if /i "%OPEN_CONFIG%"=="Y" (
         notepad config.json
     )
 ) else (
-    echo [경고] config.json.template 파일이 없습니다.
-    echo 수동으로 config.json 파일을 생성해주세요.
+    echo [WARNING] config.json.template not found
+    echo Please create config.json manually
 )
 
 :config_ok
 echo.
 
 REM ====================================================================
-REM 단계 6: backup.exe 파일 확인
+REM Step 6: Check backup.exe
 REM ====================================================================
 echo ----------------------------------------
-echo [추가] backup.exe 파일 확인
+echo [Additional] Checking backup.exe
 echo ----------------------------------------
 echo.
 
 if exist "backup.exe" (
-    echo [OK] backup.exe 파일이 존재합니다.
+    echo [OK] backup.exe exists
 ) else (
-    echo [경고] backup.exe 파일이 없습니다.
+    echo [WARNING] backup.exe not found
     echo.
-    echo backup.exe 파일은 백업 실행에 필요한 파일입니다.
-    echo Git 저장소에 backup.exe가 커밋되어 있는지 확인해주세요.
+    echo backup.exe is required for backup execution
+    echo Please ensure backup.exe is committed to the repository
     echo.
-    echo 개발자에게 요청:
-    echo   1. build_exe.bat 실행
-    echo   2. backup.exe를 Git에 커밋
+    echo Developer: Run build_exe.bat and commit backup.exe
     echo.
     pause
     exit /b 1
@@ -286,40 +239,37 @@ if exist "backup.exe" (
 echo.
 
 REM ====================================================================
-REM 단계 7: 작업 스케줄러 등록
+REM Step 7: Register Task Scheduler
 REM ====================================================================
 echo ----------------------------------------
-echo [마지막] 작업 스케줄러 등록
+echo [Final] Task Scheduler registration
 echo ----------------------------------------
 echo.
-echo 매일 자동으로 백업을 실행하도록 등록합니다.
+echo Register daily automatic backup
 echo.
 
 set TASK_NAME=Medi101Backup
 set SCHEDULE_TIME=07:00
 
-REM config.json에서 실행 시간 읽기 시도 (선택사항)
 if exist "config.json" (
-    echo config.json에서 실행 시간을 확인합니다...
-    REM 간단한 방법: findstr로 schedule_time 찾기
+    echo Reading schedule time from config.json...
     for /f "tokens=2 delims=:, " %%a in ('findstr /i "schedule_time" config.json') do (
         set SCHEDULE_TIME=%%a
     )
-    REM 따옴표 제거
     set SCHEDULE_TIME=%SCHEDULE_TIME:"=%
 )
 
-echo 실행 시간: 매일 %SCHEDULE_TIME%
+echo Execution time: Daily at %SCHEDULE_TIME%
 echo.
 
-REM 기존 작업 삭제 (있는 경우)
+REM Delete existing task
 schtasks /query /tn %TASK_NAME% >nul 2>&1
 if %errorlevel% equ 0 (
-    echo 기존 작업이 존재합니다. 삭제 중...
+    echo Removing existing task...
     schtasks /delete /tn %TASK_NAME% /f >nul
 )
 
-REM 작업 스케줄러 등록
+REM Register new task
 schtasks /create ^
     /tn "%TASK_NAME%" ^
     /tr "\"%INSTALL_PATH%\update_and_run.bat\" auto" ^
@@ -330,9 +280,9 @@ schtasks /create ^
     /f >nul
 
 if %errorlevel% equ 0 (
-    echo [OK] 작업 스케줄러에 등록 완료!
+    echo [OK] Task Scheduler registration complete!
 ) else (
-    echo [오류] 작업 스케줄러 등록에 실패했습니다.
+    echo [ERROR] Task Scheduler registration failed
     pause
     exit /b 1
 )
@@ -340,47 +290,41 @@ if %errorlevel% equ 0 (
 echo.
 
 REM ====================================================================
-REM 설치 완료
+REM Installation complete
 REM ====================================================================
 echo.
 echo ========================================
-echo 설치 완료!
+echo Installation Complete!
 echo ========================================
 echo.
-echo 설치 정보:
-echo   - 설치 경로: %INSTALL_PATH%
-echo   - 작업 이름: %TASK_NAME%
-echo   - 실행 시간: 매일 %SCHEDULE_TIME%
+echo Installation info:
+echo   - Path: %INSTALL_PATH%
+echo   - Task: %TASK_NAME%
+echo   - Schedule: Daily at %SCHEDULE_TIME%
 echo.
-echo 다음 단계:
-echo   1. config.json 파일 수정 (필수)
+echo Next steps:
+echo   1. Edit config.json (REQUIRED)
 echo      notepad %INSTALL_PATH%\config.json
 echo.
-echo   2. 수동 테스트 실행
+echo   2. Manual test run
 echo      %INSTALL_PATH%\update_and_run.bat
 echo.
-echo   3. 로그 확인
+echo   3. Check logs
 echo      notepad %INSTALL_PATH%\backup.log
 echo.
-echo 작업 스케줄러 확인:
-echo   - 작업 스케줄러 프로그램 실행
-echo   - "%TASK_NAME%" 검색
+echo Task Scheduler commands:
+echo   - Check: schtasks /query /tn "%TASK_NAME%"
+echo   - Run manually: schtasks /run /tn "%TASK_NAME%"
+echo   - Remove: schtasks /delete /tn "%TASK_NAME%" /f
 echo.
-echo 작업 스케줄러 수동 실행:
-echo   schtasks /run /tn "%TASK_NAME%"
-echo.
-echo 작업 스케줄러 제거:
-echo   schtasks /delete /tn "%TASK_NAME%" /f
-echo.
-echo 지금 config.json을 수정하시겠습니까? (Y/N)
-set /p EDIT_NOW="입력: "
+echo Edit config.json now? (Y/N)
+set /p EDIT_NOW="Input: "
 
 if /i "%EDIT_NOW%"=="Y" (
     notepad "%INSTALL_PATH%\config.json"
 )
 
 echo.
-echo 감사합니다!
+echo Thank you!
 echo.
 pause
-

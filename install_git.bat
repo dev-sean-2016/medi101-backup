@@ -1,30 +1,30 @@
 @echo off
-chcp 65001 >nul
 REM ====================================================================
-REM Git 설치 스크립트
-REM - Git이 설치되어 있지 않으면 자동으로 설치
+REM Git Installation Check Script
+REM - Check if Git is installed
+REM - Provide installation guide if not installed
 REM ====================================================================
 
 echo.
 echo ========================================
-echo Git 설치 확인 중...
+echo Git Installation Check
 echo ========================================
 echo.
 
-REM Git 설치 여부 확인
+REM Check Git installation
 where git >nul 2>nul
 if %errorlevel% equ 0 (
-    echo [OK] Git이 이미 설치되어 있습니다.
+    echo [OK] Git is already installed
     git --version
     goto :end
 )
 
-echo [경고] Git이 설치되어 있지 않습니다.
+echo [WARNING] Git is not installed
 echo.
-echo Git을 설치하려면 아래 URL에서 다운로드하여 설치해주세요:
+echo Please download and install Git from:
 echo https://git-scm.com/download/win
 echo.
-echo 설치 후 이 스크립트를 다시 실행해주세요.
+echo After installation, run this script again
 echo.
 pause
 exit /b 1
@@ -32,4 +32,3 @@ exit /b 1
 :end
 echo.
 pause
-
