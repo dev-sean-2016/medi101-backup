@@ -1,117 +1,20 @@
 @echo off
 REM ====================================================================
-REM Medi101 Backup - Build and Deploy (Simplified)
+REM Medi101 Backup - Build and Deploy
 REM 
-REM Prerequisites (install manually):
-REM - Git: https://git-scm.com/download/win
-REM - Python 3.8+: https://www.python.org/downloads/
-REM 
-REM This script: Clone → Build → Push
+REM This script: Build → Push
 REM ====================================================================
 
 echo.
 echo ========================================
-echo Medi101 Backup - Build and Deploy
+echo Build and Deploy
 echo ========================================
-echo.
-
-REM ====================================================================
-REM Check prerequisites
-REM ====================================================================
-echo [1/5] Checking prerequisites...
-
-where git >nul 2>nul
-if %errorlevel% neq 0 (
-    echo [ERROR] Git not installed
-    echo Install from: https://git-scm.com/download/win
-    pause
-    exit /b 1
-)
-echo [OK] Git: 
-git --version
-
-REM Check Python
-set PYTHON_CMD=
-where python3 >nul 2>nul
-if %errorlevel% equ 0 (
-    set PYTHON_CMD=python3
-) else (
-    where python >nul 2>nul
-    if %errorlevel% equ 0 (
-        set PYTHON_CMD=python
-    ) else (
-        echo [ERROR] Python not installed
-        echo Install from: https://www.python.org/downloads/
-        pause
-        exit /b 1
-    )
-)
-
-echo [OK] Python: 
-%PYTHON_CMD% --version
-echo.
-
-REM ====================================================================
-REM Setup working directory
-REM ====================================================================
-echo [2/5] Setting up working directory...
-
-set WORK_DIR=%USERPROFILE%\medi101-dev
-echo Working directory: %WORK_DIR%
-echo.
-
-REM Update existing or clone new
-if exist "%WORK_DIR%\.git" (
-    echo Repository exists. Updating...
-    cd /d "%WORK_DIR%"
-    git pull
-    if %errorlevel% neq 0 (
-        echo [WARNING] git pull failed, continuing...
-    )
-) else (
-    echo Cloning repository...
-    git clone https://github.com/dev-sean-2016/medi101-backup.git "%WORK_DIR%"
-    if %errorlevel% neq 0 (
-        echo [ERROR] Clone failed
-        pause
-        exit /b 1
-    )
-    cd /d "%WORK_DIR%"
-)
-
-echo [OK] Repository ready
-echo.
-
-REM ====================================================================
-REM Install packages
-REM ====================================================================
-echo [3/5] Installing Python packages...
-
-if not exist "requirements.txt" (
-    echo [ERROR] requirements.txt not found
-    pause
-    exit /b 1
-)
-
-echo Upgrading pip...
-%PYTHON_CMD% -m pip install --quiet --upgrade pip
-
-echo Installing packages...
-%PYTHON_CMD% -m pip install --quiet -r requirements.txt
-
-if %errorlevel% neq 0 (
-    echo [ERROR] Package installation failed
-    pause
-    exit /b 1
-)
-
-echo [OK] Packages installed
 echo.
 
 REM ====================================================================
 REM Build backup.exe
 REM ====================================================================
-echo [4/5] Building backup.exe...
+echo [1/2] Building backup.exe...
 
 REM Clean old builds
 if exist "build" rmdir /s /q build
@@ -149,7 +52,7 @@ echo.
 REM ====================================================================
 REM Git commit and push
 REM ====================================================================
-echo [5/5] Committing and pushing...
+echo [2/2] Committing and pushing...
 
 git add backup.exe
 
@@ -176,7 +79,6 @@ REM Push
 git push origin main
 if %errorlevel% neq 0 (
     echo [ERROR] Push failed
-    echo Try manually: cd %WORK_DIR% && git push origin main
     pause
     exit /b 1
 )
@@ -189,7 +91,6 @@ echo ========================================
 echo Complete!
 echo ========================================
 echo.
-echo Output: %WORK_DIR%\backup.exe
 echo GitHub: https://github.com/dev-sean-2016/medi101-backup
 echo.
 
