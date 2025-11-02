@@ -44,9 +44,19 @@ if %errorlevel% neq 0 (
 echo [OK] Git found: 
 git --version
 
-REM Check Python
-where python >nul 2>nul
-if %errorlevel% neq 0 (
+REM Check Python (try python3 first, then python)
+set PYTHON_CMD=
+where python3 >nul 2>nul
+if %errorlevel% equ 0 (
+    set PYTHON_CMD=python3
+) else (
+    where python >nul 2>nul
+    if %errorlevel% equ 0 (
+        set PYTHON_CMD=python
+    )
+)
+
+if "%PYTHON_CMD%"=="" (
     echo [ERROR] Python not installed
     echo.
     echo Please install Python 3.8 or later:
@@ -58,7 +68,7 @@ if %errorlevel% neq 0 (
 )
 
 echo [OK] Python found: 
-python --version
+%PYTHON_CMD% --version
 echo.
 
 REM ====================================================================
@@ -123,10 +133,10 @@ if not exist "requirements.txt" (
 )
 
 echo Upgrading pip...
-python -m pip install --quiet --upgrade pip
+%PYTHON_CMD% -m pip install --quiet --upgrade pip
 
 echo Installing required packages...
-python -m pip install --quiet -r requirements.txt
+%PYTHON_CMD% -m pip install --quiet -r requirements.txt
 
 if %errorlevel% neq 0 (
     echo [ERROR] Package installation failed
