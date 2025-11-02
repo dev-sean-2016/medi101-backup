@@ -49,24 +49,102 @@ set PYTHON_CMD=
 where python3 >nul 2>nul
 if %errorlevel% equ 0 (
     set PYTHON_CMD=python3
-) else (
+    goto :python_found
+)
+
+where python >nul 2>nul
+if %errorlevel% equ 0 (
+    set PYTHON_CMD=python
+    goto :python_found
+)
+
+REM Python not found - try to install
+echo [INFO] Python not found. Installing automatically...
+echo.
+
+REM Try winget first
+echo [Trying] Installing Python via winget...
+winget install --id Python.Python.3.12 -e --source winget --silent --accept-package-agreements --accept-source-agreements >nul 2>&1
+
+if %errorlevel% equ 0 (
+    echo [OK] Python installed via winget
+    echo Refreshing PATH...
+    set "PATH=%PATH%;%LOCALAPPDATA%\Programs\Python\Python312"
+    set "PATH=%PATH%;%LOCALAPPDATA%\Programs\Python\Python312\Scripts"
+    
+    REM Check again
     where python >nul 2>nul
     if %errorlevel% equ 0 (
         set PYTHON_CMD=python
+        echo [OK] Python installation successful
+        python --version
+        goto :python_found
     )
 )
 
-if "%PYTHON_CMD%"=="" (
-    echo [ERROR] Python not installed
+REM Try PowerShell download
+echo [Trying] Downloading Python installer...
+echo (About 25MB, 1-2 minutes...)
+echo.
+
+set TEMP_INSTALLER=%TEMP%\python-installer.exe
+
+powershell -NoProfile -ExecutionPolicy Bypass -Command "& { $ProgressPreference = 'SilentlyContinue'; try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; $url = 'https://www.python.org/ftp/python/3.12.7/python-3.12.7-amd64.exe'; Write-Host 'Downloading Python 3.12.7...'; Invoke-WebRequest -Uri $url -OutFile '%TEMP_INSTALLER%' -UseBasicParsing -TimeoutSec 300; if (Test-Path '%TEMP_INSTALLER%') { Write-Host 'Download complete'; exit 0 } else { exit 1 } } catch { Write-Host \"Download failed: $($_.Exception.Message)\"; exit 1 } }"
+
+if %errorlevel% neq 0 (
+    echo [ERROR] Automatic installation failed
     echo.
-    echo Please install Python 3.8 or later:
-    echo   https://www.python.org/downloads/
-    echo   (Check "Add Python to PATH" during installation)
+    echo RECOMMENDED: Manual installation
+    echo   1. Visit: https://www.python.org/downloads/
+    echo   2. Download Python 3.8 or later
+    echo   3. During installation: CHECK "Add Python to PATH"
+    echo   4. Run this script again
     echo.
+    echo Open browser? (Y/N)
+    set /p OPEN_PY="Input: "
+    if /i "%OPEN_PY%"=="Y" start https://www.python.org/downloads/
     pause
     exit /b 1
 )
 
+echo [OK] Download complete
+echo Installing Python... (Add to PATH automatically)
+
+REM Install with options: /quiet (silent), InstallAllUsers=0 (current user), PrependPath=1 (add to PATH)
+"%TEMP_INSTALLER%" /quiet InstallAllUsers=0 PrependPath=1 Include_pip=1
+
+echo Waiting for installation to complete...
+timeout /t 10 /nobreak >nul
+
+if exist "%TEMP_INSTALLER%" del /f /q "%TEMP_INSTALLER%"
+
+REM Refresh PATH
+set "PATH=%PATH%;%LOCALAPPDATA%\Programs\Python\Python312"
+set "PATH=%PATH%;%LOCALAPPDATA%\Programs\Python\Python312\Scripts"
+
+REM Check installation
+where python >nul 2>nul
+if %errorlevel% equ 0 (
+    set PYTHON_CMD=python
+    echo [OK] Python installation successful
+    python --version
+    goto :python_found
+)
+
+where python3 >nul 2>nul
+if %errorlevel% equ 0 (
+    set PYTHON_CMD=python3
+    echo [OK] Python installation successful
+    python3 --version
+    goto :python_found
+)
+
+echo [ERROR] Python installed but not found in PATH
+echo Please restart your computer and run this script again
+pause
+exit /b 1
+
+:python_found
 echo [OK] Python found: 
 %PYTHON_CMD% --version
 echo.
