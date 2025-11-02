@@ -140,19 +140,25 @@ class KakaoCloudBackup:
             bool: 성공 여부
         """
         try:
+            from boto3.s3.transfer import TransferConfig
+            
             file_size_mb = self._get_file_size_mb(file_path)
             logger.info(f"업로드 시작: {file_path} ({file_size_mb:.2f} MB) -> {s3_key}")
             
+            # TransferConfig를 사용한 멀티파트 업로드 설정
+            transfer_config = TransferConfig(
+                multipart_threshold=100 * 1024 * 1024,  # 100MB 이상이면 멀티파트
+                multipart_chunksize=100 * 1024 * 1024,  # 청크 크기 100MB
+                max_concurrency=10,
+                use_threads=True
+            )
+            
             # boto3의 upload_file은 자동으로 멀티파트 업로드를 처리
-            # 5GB 이상 파일은 자동으로 멀티파트로 업로드됨
             self.s3_client.upload_file(
                 file_path,
                 self.bucket_name,
                 s3_key,
-                Config=Config(
-                    multipart_threshold=100 * 1024 * 1024,  # 100MB 이상이면 멀티파트
-                    multipart_chunksize=100 * 1024 * 1024   # 청크 크기 100MB
-                )
+                Config=transfer_config
             )
             
             logger.info(f"업로드 완료: {s3_key}")
@@ -187,9 +193,9 @@ class KakaoCloudBackup:
             # S3에 동일한 파일명이 있는지 확인
             s3_size_mb = self._get_s3_object_size_mb(s3_key)
             
-            # 파일이 존재하지 않으면 업로드하지 않음
+            # 파일이 존재하지 않으면 업로드함 ✅ (로직 수정)
             if s3_size_mb is None:
-                return False, "S3에 파일이 없음 - 업로드 안 함"
+                return True, "S3에 파일이 없음 - 업로드함"
             
             # 파일이 존재하면 크기 비교
             local_size_mb = self._get_file_size_mb(file_path)
