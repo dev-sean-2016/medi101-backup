@@ -1,9 +1,17 @@
 {
   "kakao_cloud": {
+    "_comment": "Choose ONE authentication method below",
+    
+    "_method1_iam_comment": "Method 1: IAM Token Authentication (Recommended, more secure)",
     "iam": {
       "application_credential_id": "YOUR_APPLICATION_CREDENTIAL_ID",
       "application_credential_secret": "YOUR_APPLICATION_CREDENTIAL_SECRET"
     },
+    
+    "_method2_static_comment": "Method 2: Static Access Key (Legacy, if you don't have IAM credentials, uncomment below and remove 'iam' section above)",
+    "_access_key": "YOUR_ACCESS_KEY",
+    "_secret_key": "YOUR_SECRET_KEY",
+    
     "endpoint_url": "https://objectstorage.kr-central-2.kakaocloud.com",
     "bucket_name": "medi101-backup-01",
     "region": "kr-central-2"

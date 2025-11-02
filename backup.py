@@ -209,30 +209,11 @@ class KakaoCloudBackup:
     
     def _create_s3_client_with_iam(self):
         """
-        Create S3 client using IAM token authentication
+        Create S3 client (supports both IAM token and static access key)
         Returns:
             boto3.client: S3 client
         """
         try:
-            # Step 1: Get IAM token
-            x_subject_token = self._get_iam_token()
-            if not x_subject_token:
-                logger.error("Failed to get IAM token")
-                sys.exit(1)
-            
-            # Step 2: Get temporary credentials
-            credentials_xml = self._get_credentials(x_subject_token)
-            if not credentials_xml:
-                logger.error("Failed to get temporary credentials")
-                sys.exit(1)
-            
-            # Step 3: Parse credentials
-            credentials = self._parse_credentials_xml(credentials_xml)
-            if not credentials:
-                logger.error("Failed to parse credentials")
-                sys.exit(1)
-            
-            # Step 4: Create boto3 S3 client with temporary credentials
             kakao_config = self.config['kakao_cloud']
             
             boto_config = Config(
@@ -244,16 +225,60 @@ class KakaoCloudBackup:
                 max_pool_connections=50
             )
             
-            s3_client = boto3.client(
-                's3',
-                aws_access_key_id=credentials['AccessKeyId'],
-                aws_secret_access_key=credentials['SecretAccessKey'],
-                aws_session_token=credentials['SessionToken'],
-                endpoint_url=kakao_config['endpoint_url'],
-                config=boto_config
-            )
+            # Check which authentication method to use
+            if 'iam' in kakao_config:
+                # Method 1: IAM token authentication (recommended)
+                logger.info("Using IAM token authentication")
+                
+                # Step 1: Get IAM token
+                x_subject_token = self._get_iam_token()
+                if not x_subject_token:
+                    logger.error("Failed to get IAM token")
+                    sys.exit(1)
+                
+                # Step 2: Get temporary credentials
+                credentials_xml = self._get_credentials(x_subject_token)
+                if not credentials_xml:
+                    logger.error("Failed to get temporary credentials")
+                    sys.exit(1)
+                
+                # Step 3: Parse credentials
+                credentials = self._parse_credentials_xml(credentials_xml)
+                if not credentials:
+                    logger.error("Failed to parse credentials")
+                    sys.exit(1)
+                
+                # Step 4: Create S3 client with temporary credentials
+                s3_client = boto3.client(
+                    's3',
+                    aws_access_key_id=credentials['AccessKeyId'],
+                    aws_secret_access_key=credentials['SecretAccessKey'],
+                    aws_session_token=credentials['SessionToken'],
+                    endpoint_url=kakao_config['endpoint_url'],
+                    config=boto_config
+                )
+                
+                logger.info("S3 client created (IAM authentication)")
+                
+            elif 'access_key' in kakao_config and 'secret_key' in kakao_config:
+                # Method 2: Static access key authentication (legacy)
+                logger.info("Using static access key authentication")
+                
+                s3_client = boto3.client(
+                    's3',
+                    aws_access_key_id=kakao_config['access_key'],
+                    aws_secret_access_key=kakao_config['secret_key'],
+                    endpoint_url=kakao_config['endpoint_url'],
+                    config=boto_config
+                )
+                
+                logger.info("S3 client created (static key authentication)")
+                
+            else:
+                logger.error("Invalid configuration: Must have either 'iam' or 'access_key'+'secret_key'")
+                logger.error("Config has: " + ", ".join(kakao_config.keys()))
+                sys.exit(1)
             
-            logger.info("Kakao Cloud Object Storage client created (IAM authentication)")
             return s3_client
             
         except KeyError as e:
