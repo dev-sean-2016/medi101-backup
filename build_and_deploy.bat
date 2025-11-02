@@ -130,9 +130,16 @@ if %errorlevel% neq 0 (
 REM Copy to root
 if exist "dist\backup.exe" (
     copy /Y "dist\backup.exe" "backup.exe" >nul
-    echo [OK] backup.exe created
+    if exist "backup.exe" (
+        echo [OK] backup.exe created
+        for %%A in ("backup.exe") do echo       Size: %%~zA bytes
+    ) else (
+        echo [ERROR] Copy failed
+        pause
+        exit /b 1
+    )
 ) else (
-    echo [ERROR] backup.exe not found
+    echo [ERROR] backup.exe not found in dist folder
     pause
     exit /b 1
 )
