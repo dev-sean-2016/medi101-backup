@@ -176,39 +176,39 @@ class KakaoCloudBackup:
     
     def _should_upload_file(self, file_path, s3_key, file_name):
         """
-        파일 업로드 여부 결정
+        Determine whether to upload a file
         Args:
-            file_path: 로컬 파일 경로
-            s3_key: S3 객체 키
-            file_name: 파일 이름
+            file_path: Local file path
+            s3_key: S3 object key
+            file_name: File name
         Returns:
-            tuple: (업로드 여부, 이유)
+            tuple: (should_upload, reason)
         """
-        # 1. 로그 파일 (.log)은 항상 덮어쓰기
+        # 1. Log files (.log) always overwrite
         if file_name == f"{self.service_name}.log":
-            return True, "로그 파일 - 매일 덮어쓰기"
+            return True, "LOG_FILE_DAILY_OVERWRITE"
         
-        # 2. 타임스탬프 파일 (서비스명_YYYYMMDDHHMMSS)
+        # 2. Timestamp files (ServiceName_YYYYMMDDHHMMSS)
         if file_name.startswith(f"{self.service_name}_"):
-            # S3에 동일한 파일명이 있는지 확인
+            # Check if file exists in S3
             s3_size_mb = self._get_s3_object_size_mb(s3_key)
             
-            # 파일이 존재하지 않으면 업로드함 ✅ (로직 수정)
+            # If file does NOT exist in S3, UPLOAD it
             if s3_size_mb is None:
-                return True, "S3에 파일이 없음 - 업로드함"
+                return True, "NOT_EXISTS_IN_S3_UPLOAD"
             
-            # 파일이 존재하면 크기 비교
+            # If file exists, compare size
             local_size_mb = self._get_file_size_mb(file_path)
             size_diff_mb = abs(local_size_mb - s3_size_mb)
             
-            # 크기 차이가 20MB 이상이면 업로드
+            # If size difference >= 20MB, re-upload
             if size_diff_mb >= 20:
-                return True, f"파일 크기 차이 {size_diff_mb:.2f} MB - 재업로드"
+                return True, f"SIZE_DIFF_{size_diff_mb:.2f}MB_REUPLOAD"
             else:
-                return False, f"파일 크기 유사 (차이 {size_diff_mb:.2f} MB) - 업로드 안 함"
+                return False, f"SIZE_SIMILAR_DIFF_{size_diff_mb:.2f}MB_SKIP"
         
-        # 3. 기타 파일은 업로드하지 않음
-        return False, "처리 대상이 아닌 파일"
+        # 3. Other files are not uploaded
+        return False, "NOT_TARGET_FILE"
     
     def backup_files(self):
         """
