@@ -1,0 +1,5 @@
+boto3==1.34.144
+botocore==1.34.144
+pyinstaller==6.9.0
+requests==2.32.3
+

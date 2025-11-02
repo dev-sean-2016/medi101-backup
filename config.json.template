@@ -1,0 +1,19 @@
+{
+  "kakao_cloud": {
+    "access_key": "YOUR_ACCESS_KEY",
+    "secret_key": "YOUR_SECRET_KEY",
+    "endpoint_url": "https://objectstorage.kr-central-2.kakaoi.io",
+    "bucket_name": "medi101-backup-01",
+    "region": "kr-central-2"
+  },
+  "backup": {
+    "business_number": "1234567890",
+    "service_name": "YSR2000",
+    "source_paths": [
+      "C:\\backup\\WEEKLY"
+    ],
+    "max_files_keep": 8,
+    "schedule_time": "07:00"
+  }
+}
+
