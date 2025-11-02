@@ -66,16 +66,36 @@ if %errorlevel% equ 0 (
 REM Method 2: Download and install via PowerShell
 echo [Trying] Downloading Git installer...
 echo (About 50MB, may take 1-2 minutes...)
+echo.
 
 set TEMP_INSTALLER=%TEMP%\Git-Installer.exe
 
-powershell -NoProfile -ExecutionPolicy Bypass -Command "& { try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; $tag = (Invoke-RestMethod -Uri 'https://api.github.com/repos/git-for-windows/git/releases/latest').tag_name; $version = $tag -replace 'v',''; $url = \"https://github.com/git-for-windows/git/releases/download/$tag/Git-$version-64-bit.exe\"; Write-Host \"Downloading...\"; Invoke-WebRequest -Uri $url -OutFile '%TEMP_INSTALLER%' -UseBasicParsing; exit 0 } catch { Write-Host \"Failed: $_\"; exit 1 } }"
+REM Try direct download URL (more stable than API)
+echo Downloading from: https://github.com/git-for-windows/git
+powershell -NoProfile -ExecutionPolicy Bypass -Command "& { $ProgressPreference = 'SilentlyContinue'; try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; $url = 'https://github.com/git-for-windows/git/releases/download/v2.47.1.windows.1/Git-2.47.1-64-bit.exe'; Write-Host 'Starting download...'; Invoke-WebRequest -Uri $url -OutFile '%TEMP_INSTALLER%' -UseBasicParsing -TimeoutSec 300; if (Test-Path '%TEMP_INSTALLER%') { $size = (Get-Item '%TEMP_INSTALLER%').Length / 1MB; Write-Host \"Download complete: $([math]::Round($size,2)) MB\"; exit 0 } else { Write-Host 'Download failed: File not found'; exit 1 } } catch { Write-Host \"Download failed: $($_.Exception.Message)\"; exit 1 } }"
 
 if %errorlevel% neq 0 (
-    echo [ERROR] Git download failed
+    echo [ERROR] Automatic download failed
     echo.
-    echo Manual installation required:
-    echo   https://git-scm.com/download/win
+    echo RECOMMENDED: Manual installation
+    echo.
+    echo Option 1: Download directly
+    echo   1. Open browser to: https://git-scm.com/download/win
+    echo   2. Download and install Git
+    echo   3. Run setup.bat again
+    echo.
+    echo Option 2: Use winget (if available)
+    echo   1. Open PowerShell as Administrator
+    echo   2. Run: winget install Git.Git
+    echo   3. Run setup.bat again
+    echo.
+    echo Open browser now? (Y/N)
+    set /p OPEN_BROWSER="Input: "
+    
+    if /i "%OPEN_BROWSER%"=="Y" (
+        start https://git-scm.com/download/win
+    )
+    
     pause
     exit /b 1
 )
