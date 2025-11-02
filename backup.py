@@ -1,22 +1,26 @@
 """
-Kakao Cloud Object Storage 백업 프로그램
-- 지정된 경로의 파일들을 Kakao Cloud Object Storage에 백업
-- 로그 파일은 매일 덮어쓰기
-- 타임스탬프 파일은 존재하지 않을 때만 업로드
-- 파일 크기 비교하여 20MB 이상 차이나면 재업로드
-- 버킷에 파일이 8개 이상이면 가장 오래된 파일 삭제
+Kakao Cloud Object Storage Backup Program (IAM Token Authentication)
+- Backup files to Kakao Cloud Object Storage
+- Log files: Daily overwrite
+- Timestamp files: Upload only when they don't exist in S3
+- Compare file size and re-upload if difference >= 20MB
+- Delete oldest files if bucket has 8+ files
+- Uses IAM token authentication (like sample.py)
 """
 
 import os
 import sys
 import json
 import boto3
+import requests
 import logging
+import xml.etree.ElementTree as ET
 from datetime import datetime
 from botocore.exceptions import ClientError, NoCredentialsError
 from botocore.config import Config
+from boto3.s3.transfer import TransferConfig
 
-# 로깅 설정
+# Logging configuration
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
@@ -29,16 +33,16 @@ logger = logging.getLogger(__name__)
 
 
 class KakaoCloudBackup:
-    """Kakao Cloud Object Storage 백업 클래스"""
+    """Kakao Cloud Object Storage Backup Class (IAM Token Authentication)"""
     
     def __init__(self, config_path='config.json'):
         """
-        초기화 함수
+        Initialize
         Args:
-            config_path: 설정 파일 경로
+            config_path: Configuration file path
         """
         self.config = self._load_config(config_path)
-        self.s3_client = self._create_s3_client()
+        self.s3_client = self._create_s3_client_with_iam()
         self.business_number = self.config['backup']['business_number']
         self.service_name = self.config['backup']['service_name']
         self.source_paths = self.config['backup']['source_paths']
@@ -47,35 +51,190 @@ class KakaoCloudBackup:
         
     def _load_config(self, config_path):
         """
-        설정 파일 로드
+        Load configuration file
         Args:
-            config_path: 설정 파일 경로
+            config_path: Configuration file path
         Returns:
-            dict: 설정 정보
+            dict: Configuration
         """
         try:
             with open(config_path, 'r', encoding='utf-8') as f:
                 config = json.load(f)
-            logger.info(f"설정 파일 로드 완료: {config_path}")
+            logger.info(f"Configuration loaded: {config_path}")
             return config
         except FileNotFoundError:
-            logger.error(f"설정 파일을 찾을 수 없습니다: {config_path}")
-            logger.error("config.json.template 파일을 config.json으로 복사하고 값을 입력해주세요.")
+            logger.error(f"Configuration file not found: {config_path}")
+            logger.error("Please copy config.json.template to config.json and fill in the values.")
             sys.exit(1)
         except json.JSONDecodeError as e:
-            logger.error(f"설정 파일 JSON 파싱 오류: {e}")
+            logger.error(f"JSON parsing error: {e}")
             sys.exit(1)
-            
-    def _create_s3_client(self):
+    
+    def _get_iam_token(self):
         """
-        S3 호환 클라이언트 생성 (Kakao Cloud Object Storage)
+        Get IAM authentication token (X-Subject-Token)
         Returns:
-            boto3.client: S3 클라이언트
+            str: X-Subject-Token
         """
         try:
+            iam_config = self.config['kakao_cloud']['iam']
+            url = "https://iam.kakaocloud.com/identity/v3/auth/tokens"
+            
+            headers = {
+                "Content-Type": "application/json"
+            }
+            
+            payload = {
+                "auth": {
+                    "identity": {
+                        "methods": ["application_credential"],
+                        "application_credential": {
+                            "id": iam_config['application_credential_id'],
+                            "secret": iam_config['application_credential_secret']
+                        }
+                    }
+                }
+            }
+            
+            logger.info("Requesting IAM token...")
+            response = requests.post(url, headers=headers, json=payload)
+            
+            if response.status_code == 201:
+                x_subject_token = response.headers.get('X-Subject-Token')
+                if x_subject_token:
+                    logger.info("IAM token acquired successfully")
+                    return x_subject_token
+                else:
+                    logger.error("X-Subject-Token not found in response headers")
+                    return None
+            else:
+                logger.error(f"IAM token request failed: {response.status_code}")
+                logger.error(f"Response: {response.text}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"IAM token request error: {e}")
+            return None
+    
+    def _get_credentials(self, x_auth_token):
+        """
+        Get temporary credentials using X-Subject-Token
+        Args:
+            x_auth_token: X-Subject-Token
+        Returns:
+            str: XML response with credentials
+        """
+        try:
+            endpoint = self.config['kakao_cloud']['endpoint_url']
+            
+            headers = {
+                "Accept": "*/*",
+                "Content-Type": "application/json"
+            }
+            
+            payload = {
+                "Action": "AssumeRoleWithWebIdentity",
+                "DurationSeconds": 1800,
+                "ProviderId": "iam.kakaocloud.com",
+                "WebIdentityToken": x_auth_token
+            }
+            
+            logger.info("Requesting temporary credentials...")
+            response = requests.post(endpoint, headers=headers, json=payload)
+            
+            if response.status_code == 200:
+                logger.info("Temporary credentials acquired successfully")
+                return response.text
+            else:
+                logger.error(f"Credentials request failed: {response.status_code}")
+                logger.error(f"Response: {response.text}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Credentials request error: {e}")
+            return None
+    
+    def _parse_credentials_xml(self, xml_response):
+        """
+        Parse credentials from XML response
+        Args:
+            xml_response: XML response string
+        Returns:
+            dict: Parsed credentials
+        """
+        try:
+            root = ET.fromstring(xml_response)
+            
+            # Find Credentials element
+            credentials_elem = root.find('.//Credentials')
+            if credentials_elem is not None:
+                access_key = credentials_elem.find('AccessKeyId')
+                secret_key = credentials_elem.find('SecretAccessKey')
+                session_token = credentials_elem.find('SessionToken')
+                expiration = credentials_elem.find('Expiration')
+                
+                if all([access_key is not None, secret_key is not None, session_token is not None]):
+                    return {
+                        'AccessKeyId': access_key.text,
+                        'SecretAccessKey': secret_key.text,
+                        'SessionToken': session_token.text,
+                        'Expiration': expiration.text if expiration is not None else None
+                    }
+            
+            # Try alternative structure
+            access_key_text = None
+            secret_key_text = None
+            session_token_text = None
+            
+            for elem in root.iter():
+                if 'AccessKeyId' in elem.tag:
+                    access_key_text = elem.text
+                elif 'SecretAccessKey' in elem.tag:
+                    secret_key_text = elem.text
+                elif 'SessionToken' in elem.tag:
+                    session_token_text = elem.text
+            
+            if all([access_key_text, secret_key_text, session_token_text]):
+                return {
+                    'AccessKeyId': access_key_text,
+                    'SecretAccessKey': secret_key_text,
+                    'SessionToken': session_token_text
+                }
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"XML parsing error: {e}")
+            return None
+    
+    def _create_s3_client_with_iam(self):
+        """
+        Create S3 client using IAM token authentication
+        Returns:
+            boto3.client: S3 client
+        """
+        try:
+            # Step 1: Get IAM token
+            x_subject_token = self._get_iam_token()
+            if not x_subject_token:
+                logger.error("Failed to get IAM token")
+                sys.exit(1)
+            
+            # Step 2: Get temporary credentials
+            credentials_xml = self._get_credentials(x_subject_token)
+            if not credentials_xml:
+                logger.error("Failed to get temporary credentials")
+                sys.exit(1)
+            
+            # Step 3: Parse credentials
+            credentials = self._parse_credentials_xml(credentials_xml)
+            if not credentials:
+                logger.error("Failed to parse credentials")
+                sys.exit(1)
+            
+            # Step 4: Create boto3 S3 client with temporary credentials
             kakao_config = self.config['kakao_cloud']
             
-            # boto3 설정 (재시도 로직 포함)
             boto_config = Config(
                 region_name=kakao_config['region'],
                 retries={
@@ -87,39 +246,40 @@ class KakaoCloudBackup:
             
             s3_client = boto3.client(
                 's3',
-                aws_access_key_id=kakao_config['access_key'],
-                aws_secret_access_key=kakao_config['secret_key'],
+                aws_access_key_id=credentials['AccessKeyId'],
+                aws_secret_access_key=credentials['SecretAccessKey'],
+                aws_session_token=credentials['SessionToken'],
                 endpoint_url=kakao_config['endpoint_url'],
                 config=boto_config
             )
             
-            logger.info("Kakao Cloud Object Storage 클라이언트 생성 완료")
+            logger.info("Kakao Cloud Object Storage client created (IAM authentication)")
             return s3_client
             
         except KeyError as e:
-            logger.error(f"설정 파일에 필수 항목이 없습니다: {e}")
+            logger.error(f"Missing configuration: {e}")
             sys.exit(1)
         except Exception as e:
-            logger.error(f"S3 클라이언트 생성 실패: {e}")
+            logger.error(f"Failed to create S3 client: {e}")
             sys.exit(1)
     
     def _get_file_size_mb(self, file_path):
         """
-        파일 크기를 MB 단위로 반환
+        Get file size in MB
         Args:
-            file_path: 파일 경로
+            file_path: File path
         Returns:
-            float: 파일 크기 (MB)
+            float: File size (MB)
         """
         return os.path.getsize(file_path) / (1024 * 1024)
     
     def _get_s3_object_size_mb(self, s3_key):
         """
-        S3 객체 크기를 MB 단위로 반환
+        Get S3 object size in MB
         Args:
-            s3_key: S3 객체 키
+            s3_key: S3 object key
         Returns:
-            float: 객체 크기 (MB), 존재하지 않으면 None
+            float: Object size (MB), None if not exists
         """
         try:
             response = self.s3_client.head_object(
@@ -132,28 +292,26 @@ class KakaoCloudBackup:
     
     def _upload_file_with_multipart(self, file_path, s3_key):
         """
-        멀티파트 업로드로 파일 업로드 (대용량 파일 처리)
+        Upload file with multipart upload (for large files)
         Args:
-            file_path: 업로드할 파일 경로
-            s3_key: S3 저장 키
+            file_path: File path to upload
+            s3_key: S3 key
         Returns:
-            bool: 성공 여부
+            bool: Success
         """
         try:
-            from boto3.s3.transfer import TransferConfig
-            
             file_size_mb = self._get_file_size_mb(file_path)
-            logger.info(f"업로드 시작: {file_path} ({file_size_mb:.2f} MB) -> {s3_key}")
+            logger.info(f"Upload start: {file_path} ({file_size_mb:.2f} MB) -> {s3_key}")
             
-            # TransferConfig를 사용한 멀티파트 업로드 설정
+            # TransferConfig for multipart upload
             transfer_config = TransferConfig(
-                multipart_threshold=100 * 1024 * 1024,  # 100MB 이상이면 멀티파트
-                multipart_chunksize=100 * 1024 * 1024,  # 청크 크기 100MB
+                multipart_threshold=100 * 1024 * 1024,  # 100MB+
+                multipart_chunksize=100 * 1024 * 1024,   # 100MB chunks
                 max_concurrency=10,
                 use_threads=True
             )
             
-            # boto3의 upload_file은 자동으로 멀티파트 업로드를 처리
+            # boto3 automatically handles multipart upload
             self.s3_client.upload_file(
                 file_path,
                 self.bucket_name,
@@ -161,17 +319,17 @@ class KakaoCloudBackup:
                 Config=transfer_config
             )
             
-            logger.info(f"업로드 완료: {s3_key}")
+            logger.info(f"Upload complete: {s3_key}")
             return True
             
         except NoCredentialsError:
-            logger.error("인증 오류: Access Key와 Secret Key를 확인해주세요.")
+            logger.error("Authentication error: Check Access Key and Secret Key")
             return False
         except ClientError as e:
-            logger.error(f"업로드 실패 ({s3_key}): {e}")
+            logger.error(f"Upload failed ({s3_key}): {e}")
             return False
         except Exception as e:
-            logger.error(f"예상치 못한 오류 ({s3_key}): {e}")
+            logger.error(f"Unexpected error ({s3_key}): {e}")
             return False
     
     def _should_upload_file(self, file_path, s3_key, file_name):
@@ -212,10 +370,10 @@ class KakaoCloudBackup:
     
     def backup_files(self):
         """
-        소스 경로의 파일들을 백업
+        Backup files from source paths
         """
         logger.info("=" * 80)
-        logger.info(f"백업 시작: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        logger.info(f"Backup start: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         logger.info("=" * 80)
         
         upload_count = 0
@@ -224,52 +382,51 @@ class KakaoCloudBackup:
         
         for source_path in self.source_paths:
             if not os.path.exists(source_path):
-                logger.warning(f"경로가 존재하지 않습니다: {source_path}")
+                logger.warning(f"Path not found: {source_path}")
                 continue
             
-            logger.info(f"소스 경로 스캔: {source_path}")
+            logger.info(f"Scanning source path: {source_path}")
             
-            # 경로 내의 모든 파일 처리
+            # Process all files in path
             for root, dirs, files in os.walk(source_path):
                 for file_name in files:
                     file_path = os.path.join(root, file_name)
                     
-                    # S3 저장 경로: {사업자번호}/{파일명}
+                    # S3 storage path: {business_number}/{filename}
                     s3_key = f"{self.business_number}/{file_name}"
                     
-                    # 업로드 여부 확인
+                    # Check if should upload
                     should_upload, reason = self._should_upload_file(
                         file_path, s3_key, file_name
                     )
                     
                     if should_upload:
-                        logger.info(f"[업로드] {file_name} - {reason}")
+                        logger.info(f"[UPLOAD] {file_name} - {reason}")
                         if self._upload_file_with_multipart(file_path, s3_key):
                             upload_count += 1
                         else:
                             error_count += 1
                     else:
-                        logger.info(f"[스킵] {file_name} - {reason}")
+                        logger.info(f"[SKIP] {file_name} - {reason}")
                         skip_count += 1
         
-        # 오래된 파일 정리
+        # Cleanup old files
         self._cleanup_old_files()
         
-        # 결과 요약
+        # Summary
         logger.info("=" * 80)
-        logger.info("백업 완료")
-        logger.info(f"업로드: {upload_count}개, 스킵: {skip_count}개, 오류: {error_count}개")
+        logger.info("Backup complete")
+        logger.info(f"Uploaded: {upload_count}, Skipped: {skip_count}, Errors: {error_count}")
         logger.info("=" * 80)
     
     def _cleanup_old_files(self):
         """
-        버킷의 사업자번호 경로에서 파일이 max_files_keep개 이상이면
-        가장 오래된 파일 삭제
+        Delete oldest files if bucket has max_files_keep+ files
         """
         try:
-            logger.info(f"파일 정리 시작: {self.business_number}/ 경로")
+            logger.info(f"Cleanup start: {self.business_number}/ path")
             
-            # 사업자번호 경로의 모든 객체 조회
+            # List all objects in business_number path
             prefix = f"{self.business_number}/"
             response = self.s3_client.list_objects_v2(
                 Bucket=self.bucket_name,
@@ -277,16 +434,16 @@ class KakaoCloudBackup:
             )
             
             if 'Contents' not in response:
-                logger.info("버킷에 파일이 없습니다.")
+                logger.info("No files in bucket")
                 return
             
-            # 파일 목록 (타임스탬프 파일만)
+            # File list (timestamp files only)
             files = []
             for obj in response['Contents']:
                 key = obj['Key']
                 file_name = key.replace(prefix, '')
                 
-                # 타임스탬프 파일만 카운트 (로그 파일 제외)
+                # Count only timestamp files (exclude log files)
                 if file_name.startswith(f"{self.service_name}_"):
                     files.append({
                         'key': key,
@@ -294,20 +451,20 @@ class KakaoCloudBackup:
                         'size': obj['Size'] / (1024 * 1024)  # MB
                     })
             
-            logger.info(f"현재 백업 파일 개수: {len(files)}개 (최대: {self.max_files_keep}개)")
+            logger.info(f"Current backup files: {len(files)} (max: {self.max_files_keep})")
             
-            # 최대 개수 초과시 오래된 파일 삭제
+            # Delete old files if exceeds max
             if len(files) > self.max_files_keep:
-                # 날짜순 정렬 (오래된 것부터)
+                # Sort by date (oldest first)
                 files.sort(key=lambda x: x['last_modified'])
                 
-                # 삭제할 파일 개수
+                # Number of files to delete
                 delete_count = len(files) - self.max_files_keep
                 
                 for i in range(delete_count):
                     file_to_delete = files[i]
                     logger.info(
-                        f"오래된 파일 삭제: {file_to_delete['key']} "
+                        f"Deleting old file: {file_to_delete['key']} "
                         f"({file_to_delete['last_modified']}, {file_to_delete['size']:.2f} MB)"
                     )
                     
@@ -316,31 +473,30 @@ class KakaoCloudBackup:
                         Key=file_to_delete['key']
                     )
                 
-                logger.info(f"{delete_count}개의 오래된 파일 삭제 완료")
+                logger.info(f"Deleted {delete_count} old files")
             else:
-                logger.info("파일 정리 불필요")
+                logger.info("No cleanup needed")
                 
         except ClientError as e:
-            logger.error(f"파일 정리 실패: {e}")
+            logger.error(f"Cleanup failed: {e}")
         except Exception as e:
-            logger.error(f"예상치 못한 오류 (파일 정리): {e}")
+            logger.error(f"Unexpected error (cleanup): {e}")
 
 
 def main():
-    """메인 함수"""
+    """Main function"""
     try:
-        # 백업 실행
+        # Run backup
         backup = KakaoCloudBackup()
         backup.backup_files()
         
     except KeyboardInterrupt:
-        logger.info("\n사용자에 의해 중단되었습니다.")
+        logger.info("\nInterrupted by user")
         sys.exit(0)
     except Exception as e:
-        logger.error(f"치명적 오류: {e}", exc_info=True)
+        logger.error(f"Fatal error: {e}", exc_info=True)
         sys.exit(1)
 
 
 if __name__ == "__main__":
     main()
-

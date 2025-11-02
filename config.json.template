@@ -1,7 +1,9 @@
 {
   "kakao_cloud": {
-    "access_key": "YOUR_ACCESS_KEY",
-    "secret_key": "YOUR_SECRET_KEY",
+    "iam": {
+      "application_credential_id": "YOUR_APPLICATION_CREDENTIAL_ID",
+      "application_credential_secret": "YOUR_APPLICATION_CREDENTIAL_SECRET"
+    },
     "endpoint_url": "https://objectstorage.kr-central-2.kakaocloud.com",
     "bucket_name": "medi101-backup-01",
     "region": "kr-central-2"
