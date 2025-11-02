@@ -2,16 +2,19 @@
 REM ====================================================================
 REM Medi101 Backup Program - Build and Deploy Script (For Developers)
 REM 
+REM Prerequisites:
+REM - Git installed
+REM - Python 3.8+ installed
+REM 
 REM This script automatically:
-REM 1. Checks and installs Git
-REM 2. Checks Python installation
-REM 3. Clones or updates repository
-REM 4. Installs Python packages
-REM 5. Builds backup.exe
-REM 6. Commits and pushes to Git
+REM 1. Checks Git and Python
+REM 2. Clones or updates repository
+REM 3. Installs Python packages
+REM 4. Builds backup.exe
+REM 5. Commits and pushes to Git
 REM 
 REM Usage:
-REM   Double-click to run (administrator recommended)
+REM   Double-click to run
 REM ====================================================================
 
 echo.
@@ -21,113 +24,48 @@ echo ========================================
 echo.
 
 REM ====================================================================
-REM Step 1: Check and install Git
+REM Step 1: Check Git
 REM ====================================================================
 echo ----------------------------------------
-echo [1/6] Git installation check
+echo [1/5] Checking prerequisites
 echo ----------------------------------------
 
 where git >nul 2>nul
-if %errorlevel% equ 0 (
-    echo [OK] Git is already installed
-    git --version
-    goto :git_ok
-)
-
-echo [INFO] Git not found. Installing automatically...
-echo.
-
-REM Try winget first
-echo [Trying] Installing Git via winget...
-winget install --id Git.Git -e --source winget --silent --accept-package-agreements --accept-source-agreements >nul 2>&1
-
-if %errorlevel% equ 0 (
-    echo [OK] Git installed via winget
-    set "PATH=%PATH%;C:\Program Files\Git\cmd"
-    where git >nul 2>nul
-    if %errorlevel% equ 0 (
-        echo [OK] Git installation successful
-        git --version
-        goto :git_ok
-    )
-)
-
-REM Try PowerShell download
-echo [Trying] Downloading Git via PowerShell...
-echo (About 50MB, 1-2 minutes...)
-
-set TEMP_INSTALLER=%TEMP%\Git-Installer.exe
-
-powershell -NoProfile -ExecutionPolicy Bypass -Command "& { try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; $tag = (Invoke-RestMethod -Uri 'https://api.github.com/repos/git-for-windows/git/releases/latest').tag_name; $version = $tag -replace 'v',''; $url = \"https://github.com/git-for-windows/git/releases/download/$tag/Git-$version-64-bit.exe\"; Write-Host \"Downloading...\"; Invoke-WebRequest -Uri $url -OutFile '%TEMP_INSTALLER%' -UseBasicParsing; exit 0 } catch { Write-Host \"Failed: $_\"; exit 1 } }"
-
 if %errorlevel% neq 0 (
-    echo [ERROR] Git download failed
+    echo [ERROR] Git not installed
     echo.
-    echo Manual installation required:
+    echo Please install Git first:
     echo   https://git-scm.com/download/win
+    echo.
     pause
     exit /b 1
 )
 
-echo Installing Git...
-"%TEMP_INSTALLER%" /VERYSILENT /NORESTART /NOCANCEL /SP-
+echo [OK] Git found: 
+git --version
 
-timeout /t 5 /nobreak >nul
-if exist "%TEMP_INSTALLER%" del /f /q "%TEMP_INSTALLER%"
-
-set "PATH=%PATH%;C:\Program Files\Git\cmd"
-
-where git >nul 2>nul
-if %errorlevel% neq 0 (
-    echo [ERROR] Git installed but not working
-    echo Please restart computer and run this script again
-    pause
-    exit /b 1
-)
-
-:git_ok
-echo.
-
-REM ====================================================================
-REM Step 2: Check Python installation
-REM ====================================================================
-echo ----------------------------------------
-echo [2/6] Python installation check
-echo ----------------------------------------
-
+REM Check Python
 where python >nul 2>nul
-if %errorlevel% equ 0 (
-    echo [OK] Python is installed
-    python --version
-    goto :python_ok
+if %errorlevel% neq 0 (
+    echo [ERROR] Python not installed
+    echo.
+    echo Please install Python 3.8 or later:
+    echo   https://www.python.org/downloads/
+    echo   (Check "Add Python to PATH" during installation)
+    echo.
+    pause
+    exit /b 1
 )
 
-echo [ERROR] Python not installed
-echo.
-echo Installation required:
-echo   1. Visit https://www.python.org/downloads/
-echo   2. Download Python 3.8 or later
-echo   3. During installation, CHECK "Add Python to PATH"
-echo   4. After installation, run this script again
-echo.
-echo Open browser? (Y/N)
-set /p OPEN_PY="Input: "
-
-if /i "%OPEN_PY%"=="Y" (
-    start https://www.python.org/downloads/
-)
-
-pause
-exit /b 1
-
-:python_ok
+echo [OK] Python found: 
+python --version
 echo.
 
 REM ====================================================================
-REM Step 3: Setup working directory
+REM Step 2: Setup working directory
 REM ====================================================================
 echo ----------------------------------------
-echo [3/6] Working directory setup
+echo [2/5] Working directory setup
 echo ----------------------------------------
 echo.
 
@@ -159,6 +97,7 @@ git clone https://github.com/dev-sean-2016/medi101-backup.git "%WORK_DIR%"
 
 if %errorlevel% neq 0 (
     echo [ERROR] Git clone failed
+    echo Check internet connection and repository access
     pause
     exit /b 1
 )
@@ -170,23 +109,23 @@ echo [OK] Repository ready
 echo.
 
 REM ====================================================================
-REM Step 4: Install Python packages
+REM Step 3: Install Python packages
 REM ====================================================================
 echo ----------------------------------------
-echo [4/6] Python package installation
+echo [3/5] Installing Python packages
 echo ----------------------------------------
 echo.
 
 if not exist "requirements.txt" (
-    echo [WARNING] requirements.txt not found
-    goto :skip_install
+    echo [ERROR] requirements.txt not found
+    pause
+    exit /b 1
 )
 
 echo Upgrading pip...
 python -m pip install --quiet --upgrade pip
 
-echo.
-echo Installing packages...
+echo Installing required packages...
 python -m pip install --quiet -r requirements.txt
 
 if %errorlevel% neq 0 (
@@ -196,29 +135,30 @@ if %errorlevel% neq 0 (
 )
 
 echo [OK] Package installation complete
-goto :packages_ok
-
-:skip_install
-echo [SKIP] Package installation skipped
-
-:packages_ok
 echo.
 
 REM ====================================================================
-REM Step 5: Build backup.exe
+REM Step 4: Build backup.exe
 REM ====================================================================
 echo ----------------------------------------
-echo [5/6] Building backup.exe
+echo [4/5] Building backup.exe
 echo ----------------------------------------
 echo.
 
 REM Clean previous build
-if exist "build" rmdir /s /q build
-if exist "dist" rmdir /s /q dist
-if exist "backup.spec" del /q backup.spec
+if exist "build" (
+    echo Cleaning old build...
+    rmdir /s /q build
+)
+if exist "dist" (
+    rmdir /s /q dist
+)
+if exist "backup.spec" (
+    del /q backup.spec
+)
 
 echo Building with PyInstaller...
-echo (1-2 minutes, please wait...)
+echo (This may take 1-2 minutes, please wait...)
 echo.
 
 pyinstaller --onefile ^
@@ -230,6 +170,7 @@ pyinstaller --onefile ^
 if %errorlevel% neq 0 (
     echo.
     echo [ERROR] Build failed
+    echo Check backup.py for errors
     pause
     exit /b 1
 )
@@ -249,7 +190,7 @@ REM Check file size
 if exist "backup.exe" (
     for %%A in ("backup.exe") do set SIZE=%%~zA
     set /A SIZE_MB=%SIZE% / 1048576
-    echo [OK] backup.exe created (Size: %SIZE_MB% MB)
+    echo [OK] backup.exe created successfully (Size: %SIZE_MB% MB)
 ) else (
     echo [ERROR] backup.exe not created
     pause
@@ -259,10 +200,10 @@ if exist "backup.exe" (
 echo.
 
 REM ====================================================================
-REM Step 6: Git commit and push
+REM Step 5: Git commit and push
 REM ====================================================================
 echo ----------------------------------------
-echo [6/6] Git commit and push
+echo [5/5] Committing and pushing to GitHub
 echo ----------------------------------------
 echo.
 
@@ -276,15 +217,13 @@ git add backup.exe
 REM Check if there are changes to commit
 git diff --cached --quiet
 if %errorlevel% equ 0 (
-    echo [INFO] No changes to commit. Skipping push.
+    echo [INFO] No changes detected. Skipping commit.
     goto :done
 )
 
 REM Get commit message
 echo.
-echo Enter commit message
-echo (Example: Update backup.exe, Bug fix, New feature, etc.)
-echo.
+echo Enter commit message (or press Enter for default)
 set /p COMMIT_MSG="Commit message: "
 
 if "%COMMIT_MSG%"=="" (
@@ -301,6 +240,8 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
+echo [OK] Commit successful
+
 echo.
 echo Pushing to GitHub...
 git push origin main
@@ -314,13 +255,15 @@ if %errorlevel% neq 0 (
     echo   2. Git authentication required (GitHub login)
     echo   3. Permission denied
     echo.
-    echo Manual push:
+    echo To push manually:
     echo   cd %WORK_DIR%
     echo   git push origin main
     echo.
     pause
     exit /b 1
 )
+
+echo [OK] Push successful
 
 :done
 echo.
@@ -329,27 +272,23 @@ echo Build and Deploy Complete!
 echo ========================================
 echo.
 echo Summary:
-echo   - Git: Checked/Installed
-echo   - Python: Checked
-echo   - Repository: Cloned/Updated
-echo   - Packages: Installed
-echo   - backup.exe: Built
-echo   - Git: Committed and Pushed
+echo   ✓ Git and Python verified
+echo   ✓ Repository updated
+echo   ✓ Packages installed
+echo   ✓ backup.exe built (%SIZE_MB% MB)
+echo   ✓ Changes committed and pushed
 echo.
-echo Generated file:
-echo   - %WORK_DIR%\backup.exe
+echo Output file: %WORK_DIR%\backup.exe
 echo.
-echo GitHub repository:
-echo   https://github.com/dev-sean-2016/medi101-backup
+echo GitHub: https://github.com/dev-sean-2016/medi101-backup
 echo.
 echo Next step:
-echo   On production server, run setup.bat
-echo   Latest backup.exe will be downloaded automatically
+echo   Production servers will automatically download
+echo   the latest backup.exe on next scheduled run.
 echo.
 
 REM Clean build folders
-echo.
-echo Delete build and dist folders? (Y/N)
+echo Clean temporary build folders? (Y/N)
 set /p CLEANUP="Input: "
 
 if /i "%CLEANUP%"=="Y" (
@@ -360,5 +299,5 @@ if /i "%CLEANUP%"=="Y" (
 )
 
 echo.
-echo Done!
+echo All done! You can close this window.
 pause
